@@ -45,7 +45,7 @@ from transformers import (
 
 from .args import get_args
 from data_processing import data_processors, data_classes
-from .train_utils import mask_tokens
+from .mlm_utils import mask_tokens
 from .train_utils import pairwise_accuracy
 
 # Tensorboard utilities.
@@ -215,15 +215,15 @@ def train(args, train_dataset, model, tokenizer):
                 )  # XLM and DistilBERT don't use segment_ids
                 inputs["token_type_ids"] = None
 
+            if args.training_phase == "pretrain":
+                masked_inputs, lm_labels = mask_tokens(
+                    inputs["input_ids"], tokenizer, args)
+                inputs["input_ids"] = masked_inputs
+                inputs["labels"] = lm_labels
+
             ##################################################
             # TODO: Please finish the following training loop.
-            # Make sure to make a special if-statement for
-            # args.training_phase is `pretrain`.
             raise NotImplementedError("Please finish the TODO!")
-
-            if args.training_phase == "pretrain":
-                # TODO: Mask the input tokens.
-                raise NotImplementedError("Please finish the TODO!")
 
             # TODO: See the HuggingFace transformers doc to properly get
             # the loss from the model outputs.
@@ -380,15 +380,15 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
                 )  # XLM and DistilBERT don't use segment_ids
                 inputs["token_type_ids"] = None
 
+            if args.training_phase == "pretrain":
+                masked_inputs, lm_labels = mask_tokens(
+                    inputs["input_ids"], tokenizer, args)
+                inputs["input_ids"] = masked_inputs
+                inputs["labels"] = lm_labels
+
             ##################################################
             # TODO: Please finish the following eval loop.
-            # Make sure to make a special if-statement for
-            # args.training_phase is `pretrain`.
             raise NotImplementedError("Please finish the TODO!")
-
-            if args.training_phase == "pretrain":
-                # TODO: Mask the input tokens.
-                raise NotImplementedError("Please finish the TODO!")
 
             # TODO: See the HuggingFace transformers doc to properly get the loss
             # AND the logits from the model outputs, it can simply be 
@@ -441,15 +441,15 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
         ##################################################
         # TODO: Please finish the results computation.
 
-        # TODO: For `pretrain` phase, we only need to compute the
-        # metric "perplexity", that is the exp of the eval_loss.
         if args.training_phase == "pretrain":
-            raise NotImplementedError("Please finish the TODO!")
-        # TODO: Please use the preds and labels to properly compute all
-        # the following metrics: accuracy, precision, recall and F1-score.
-        # Please also make your sci-kit learn scores able to take the
-        # `args.score_average_method` for the `average` argument.
+            # For `pretrain` phase, we only need to compute the
+            # metric "perplexity", that is the exp of the eval_loss.
+            eval_perplexity = math.exp(eval_loss)
         else:
+            # TODO: Please use the preds and labels to properly compute all
+            # the following metrics: accuracy, precision, recall and F1-score.
+            # Please also make your sci-kit learn scores able to take the
+            # `args.score_average_method` for the `average` argument.
             raise NotImplementedError("Please finish the TODO!")
             # TODO: Pairwise accuracy.
             if args.task_name == "com2sense":
@@ -618,10 +618,7 @@ def main():
     # TODO: Please fill in the below to obtain the
     # `AutoConfig`, `AutoTokenizer` and some auto
     # model classes correctly. Check the documentation
-    # for essential args. For the model, please write
-    # an if-else statements that to use MLM model when
-    # `training_phase` is `pretrain` otherwise use the
-    # sequence classification model.
+    # for essential args.
 
     # TODO: Huggingface configs.
     raise NotImplementedError("Please finish the TODO!")
@@ -629,9 +626,15 @@ def main():
     # TODO: Tokenizer.
     raise NotImplementedError("Please finish the TODO!")
 
-    # TODO: Defines the model.
+    # TODO: Defines the model. We use the MLM model when 
+    # `training_phase` is `pretrain` otherwise we use the
+    # sequence classification model.
     if args.training_phase == "pretrain":
-        raise NotImplementedError("Please finish the TODO!")
+        model = AutoModelForMaskedLM.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+        )
     else:
         raise NotImplementedError("Please finish the TODO!")
 

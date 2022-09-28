@@ -15,12 +15,10 @@ python3 -m trainers.train_utils
 If it prints out:
 
 ```bash
-Your `mask_tokens` function is correct!
 Your `pairwise_accuracy` function is correct!
 ```
 Then you should be all set!  
 Otherwise, please check your implementation again as highly there are something wrong.
-
 
 ## Training and Evluation Loops
 

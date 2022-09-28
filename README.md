@@ -1,4 +1,4 @@
-# UCLA Winter2022 CS188 Course Project Guideline
+# UCLA CS188 Course Project Guideline
 
 # Table of Contents
 
@@ -51,8 +51,8 @@ And then install all the required packages simply by:
 ```bash
 pip install --upgrade pip
 
-# Install PyTorch, the --no-cache-dir allows you to install on a machine with small RAM
-pip3 --no-cache-dir install torch==1.10.1+cu113 torchvision==0.11.2+cu113 torchaudio==0.10.1+cu113 -f https://download.pytorch.org/whl/cu113/torch_stable.html
+# Install PyTorch
+pip install torch==1.10.1
 
 # The below command will bulk install everything needed.
 pip install -r requirements.txt
@@ -122,22 +122,16 @@ Please refer to the README under `data_processing` folder for data schema and ex
 
 Please refer to the README under `trainers` folder for details of `TODO`s.
 
-We have prepared a few scripts for you to use:
+We have prepared an example script for you to use:
 
 ```bash
-# Script for finetuning a model on Sem-Eval dataset.
-sh scripts/train_semeval.sh
-
 # Script for finetuning a model on Com2Sense dataset.
 sh scripts/train_com2sense.sh
-
-# Script for running an MLM pretraining on some dataset.
-sh scripts/run_pretraining.sh
-
-# Script for loading an MLM-pretrained model and continue finetuning.
-sh scripts/finetune_from_pretrain_dummy.sh
 ```
-In any training script, if you comment out (or remove) the `--do_train` argument, then the script will only execute the testing.  
+
+We also provide some scripts that may help you further improve the model performance, the details of which can be found in the `scripts` directory.
+
+ In any training script, if you comment out (or remove) the `--do_train` argument, then the script will only execute the testing.  
 In this case, please ensure the `--iters_to_eval` is properly set to the checkpoint(s) you would like to evaluate.  
 
 Other most essential arguments to be aware of and you **SHOULD TRY TO TUNE** are:
