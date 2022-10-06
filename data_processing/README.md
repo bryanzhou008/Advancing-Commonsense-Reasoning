@@ -84,7 +84,7 @@ Correct Statement, Incorrect Statement, Right Reason1, Confusing Reason1, Confus
 The datasets in Sem-Eval are of csv files, and we highly recommend using [csv.DictReader](https://docs.python.org/3/library/csv.html) to load the files.
 Or else, you can consider using [pandas.read\_csv](https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html) but it might be more straightforward to use the generic `csv` package mentioned above.
 
-Please finish the `TODO` blocks in `semeval_data.py`.
+The `TODO` blocks in `semeval_data.py` are optional, but Sem-Eval may be helpful for the model performance on Com2Sense.
 
 Once done, execute the following command:
 ```bash
@@ -102,8 +102,8 @@ SemEvalSingleSentenceExample(guid=0, text='when it rains humidity forms', label=
 
 # The Dataset Class
 
-In `processors.py` please carefully read the `DummyDataset` and finish both  
-`TODO`s in `SemEvalDataset` and `Com2SenseDataset`.
+In `processors.py` please carefully read the `DummyDataset` and finish the 
+`TODO`s in `Com2SenseDataset`. You may optionally finish the `TODO`s in `semeval_data.py`, which may be helpful for improving the model performance on Com2Sense. 
 
 
 # Initializations

@@ -38,6 +38,7 @@ class SemEvalDataProcessor(DataProcessor):
             data_dir = self.data_dir
 
         ##################################################
+        # NOTE: this TODO is optional
         # TODO: Use csv.DictReader or pd.read_csv to load
         # the csv file and process the data properly.
         # We recommend separately storing the correct and
