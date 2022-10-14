@@ -46,9 +46,11 @@ conda install pip
 conda deactivate
 ```
 
-And then install all the required packages simply by:
+And then install all the required packages in your environment simply by:
 
 ```bash
+conda activate cs188
+
 pip install --upgrade pip
 
 # Install PyTorch
