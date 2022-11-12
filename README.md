@@ -1,4 +1,4 @@
-# UCLA CS188 Course Project Guideline
+# Common Sense Reasoning Guideline
 
 # Table of Contents
 
