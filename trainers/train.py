@@ -66,8 +66,6 @@ def set_seed(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    print("ngpus:", args.n_gpu)
-
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
@@ -406,11 +404,16 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
                     input_ids=inputs['input_ids'],
                     labels=inputs['labels']
                 )
-            else:
+            elif args.eval_split != "test":
                 output = model(
                     input_ids=inputs['input_ids'],
                     attention_mask=inputs['attention_mask'],
                     labels=inputs['labels']
+                )
+            else:
+                output = model(
+                    input_ids=inputs['input_ids'],
+                    attention_mask=inputs['attention_mask']
                 )
 
             # TODO: See the HuggingFace transformers doc to properly get the loss
@@ -418,10 +421,11 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             # indexing properly the outputs as tuples.
             # Make sure to perform a `.mean()` on the eval loss and add it
             # to the `eval_loss` variable.
-            loss = output.loss.mean()
+            if args.eval_split != "test":
+                loss = output.loss.mean()
+                eval_loss += loss
+
             logits = output.logits
-            
-            eval_loss += loss
 
             # TODO: Handles the logits with Softmax properly.
             softmax = torch.nn.Softmax(dim=1)
@@ -708,6 +712,14 @@ def main():
                 " of `iter_to_eval` or `eval_all_checkpoints` should be set.")
             checkpoints = []
             for iter_to_eval in args.iters_to_eval:
+                # print("args.iters_to_eval:", args.iters_to_eval)
+                # print(args.output_dir + "/*-{}/".format(iter_to_eval) + WEIGHTS_NAME)
+                # checkpoints_curr = list(
+                #     os.path.dirname(c) for c in sorted(glob.glob(
+                #         args.output_dir + "/*-{}/".format(iter_to_eval)
+                #         + WEIGHTS_NAME, recursive=True))
+                # )
+                # the original code has an extea *-, I don't know why
                 checkpoints_curr = list(
                     os.path.dirname(c) for c in sorted(glob.glob(
                         args.output_dir + "/*-{}/".format(iter_to_eval)

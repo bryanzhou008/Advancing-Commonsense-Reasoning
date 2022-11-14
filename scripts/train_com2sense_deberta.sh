@@ -10,6 +10,7 @@ CUDA_VISIBLE_DEVICES=0 python3 -m trainers.train \
   --model_name_or_path ${MODEL_TYPE} \
   --do_train \
   --do_eval \
+  --eval_all_checkpoints \
   --evaluate_during_training \
   --gradient_accumulation_steps 4 \
   --per_gpu_train_batch_size 8 \

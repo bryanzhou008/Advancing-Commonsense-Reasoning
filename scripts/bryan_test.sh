@@ -7,20 +7,19 @@ MODEL_TYPE="microsoft/deberta-v3-large"
 
 
 TASK_NAME="com2sense"
-OUTPUT_DIR=${TASK_NAME}/bryan3
+OUTPUT_DIR=${TASK_NAME}/bryan2
 
 
 CUDA_VISIBLE_DEVICES=0 python3 -m trainers.train \
-  --model_name_or_path ${MODEL_TYPE} \
-  --do_train \
+  --model_name_or_path outputs/com2sense/bryan2/ckpts/checkpoint-2000 \
   --do_eval \
-  --iters_to_eval 2000 \
+  --iters_to_eval checkpoint-2000 \
   --evaluate_during_training \
   --gradient_accumulation_steps 4 \
   --per_gpu_train_batch_size 12 \
   --per_gpu_eval_batch_size 1 \
   --learning_rate 9e-6 \
-  --max_steps 3000 \
+  --max_steps 100 \
   --max_seq_length 128 \
   --output_dir "${OUTPUT_DIR}/ckpts" \
   --task_name "${TASK_NAME}" \
@@ -28,7 +27,7 @@ CUDA_VISIBLE_DEVICES=0 python3 -m trainers.train \
   --save_steps 50 \
   --logging_steps 50 \
   --warmup_steps 500 \
-  --eval_split "dev" \
+  --eval_split "test" \
   --score_average_method "micro" \
   --do_not_load_optimizer \
   --weight_decay 0.01 \
