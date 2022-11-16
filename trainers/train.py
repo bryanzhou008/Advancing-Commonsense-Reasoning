@@ -722,7 +722,7 @@ def main():
                 # the original code has an extea *-, I don't know why
                 checkpoints_curr = list(
                     os.path.dirname(c) for c in sorted(glob.glob(
-                        args.output_dir + "/*-{}/".format(iter_to_eval)
+                        args.output_dir + "/{}/".format(iter_to_eval)
                         + WEIGHTS_NAME, recursive=True))
                 )
                 checkpoints += checkpoints_curr

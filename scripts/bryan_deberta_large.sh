@@ -7,14 +7,14 @@ MODEL_TYPE="microsoft/deberta-v3-large"
 
 
 TASK_NAME="com2sense"
-OUTPUT_DIR=${TASK_NAME}/bryan3
+OUTPUT_DIR=${TASK_NAME}/bryan9
 
 
 CUDA_VISIBLE_DEVICES=0 python3 -m trainers.train \
   --model_name_or_path ${MODEL_TYPE} \
   --do_train \
   --do_eval \
-  --iters_to_eval 2000 \
+  --eval_all_checkpoints \
   --evaluate_during_training \
   --gradient_accumulation_steps 4 \
   --per_gpu_train_batch_size 12 \
