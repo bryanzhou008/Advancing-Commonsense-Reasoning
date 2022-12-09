@@ -4,6 +4,10 @@ import argparse
 def get_args():
     parser = argparse.ArgumentParser()
 
+    # for contrastive learning
+    parser.add_argument("--do_contrastive_learning", action="store_true",
+                        help="Whether to do contrastive learning.")
+
     # Basic args.
     parser.add_argument(
         "--model_name_or_path",
@@ -215,6 +219,9 @@ def get_args():
     parser.add_argument(
         "--no_gene", action="store_true", 
         help="Set this flag if not using the gene and variation information."
+    )
+    parser.add_argument("--k_folds", default=5, type=int,
+        help="Set the K-fold Cross Validator."
     )
     args = parser.parse_args()
 

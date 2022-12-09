@@ -27,10 +27,9 @@ import pprint
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset, ConcatDataset, SubsetRandomSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
-import torch.nn.functional as F
 
 from transformers import (
     WEIGHTS_NAME,
@@ -58,74 +57,33 @@ except ImportError:
 # Accuracy metrics.
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 
+# K-fold validation.
+from sklearn.model_selection import KFold
+
 # Loggers.
 logger = logging.getLogger(__name__)
-
-
-class ContrastiveLoss(torch.nn.Module):
-    def __init__(self, batch_size, device='cuda', temperature=0.5):
-        super().__init__()
-        self.batch_size = batch_size
-        self.register_buffer("temperature", torch.tensor(temperature).to(device))			# 超参数 温度
-        self.register_buffer("negatives_mask", (~torch.eye(batch_size * 2, batch_size * 2, dtype=bool).to(device)).float())		# 主对角线为0，其余位置全为1的mask矩阵
-        
-    def forward(self, emb_i, emb_j):		# emb_i, emb_j 是来自同一图像的两种不同的预处理方法得到
-        z_i = F.normalize(emb_i, dim=1)     # (bs, dim)  --->  (bs, dim)
-        z_j = F.normalize(emb_j, dim=1)     # (bs, dim)  --->  (bs, dim)
-
-        representations = torch.cat([z_i, z_j], dim=0)          # repre: (2*bs, dim)
-        similarity_matrix = F.cosine_similarity(representations.unsqueeze(1), representations.unsqueeze(0), dim=2)      # simi_mat: (2*bs, 2*bs)
-        
-        sim_ij = torch.diag(similarity_matrix, self.batch_size)         # bs
-        sim_ji = torch.diag(similarity_matrix, -self.batch_size)        # bs
-        positives = torch.cat([sim_ij, sim_ji], dim=0)                  # 2*bs
-        
-        nominator = torch.exp(positives / self.temperature)             # 2*bs
-        denominator = self.negatives_mask * torch.exp(similarity_matrix / self.temperature)             # 2*bs, 2*bs
-    
-        loss_partial = -torch.log(nominator / torch.sum(denominator, dim=1))        # 2*bs
-        loss = torch.sum(loss_partial) / (2 * self.batch_size)
-        return loss
-
-    
-
-
-
-
-
-
-
-
-
-
 
 
 def set_seed(args):
     random.seed(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
-
     if args.n_gpu > 0:
         torch.cuda.manual_seed_all(args.seed)
 
 
-def train(args, train_dataset, model, tokenizer):
-
+def train(args, train_dataloader, eval_dataloader, model, tokenizer):
     """ Train the model """
     if args.local_rank in [-1, 0]:
         output_str = args.output_dir.split("/")[-1]
         comment_str = "_{}_{}".format(output_str, args.task_name)
         tb_writer = SummaryWriter(comment=comment_str)
 
-    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
-    if args.do_contrastive_learning:
-        train_sampler = SequentialSampler(train_dataset) if args.local_rank == -1 \
-            else DistributedSampler(train_dataset)
-    else:
-        train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 \
-            else DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, sampler=train_sampler,
-                                  batch_size=args.train_batch_size)
+    # args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
+    # train_sampler = RandomSampler(train_dataset) if args.local_rank == -1 \
+    #     else DistributedSampler(train_dataset)
+    # train_dataloader = DataLoader(train_dataset, sampler=train_sampler,
+    #                               batch_size=args.train_batch_size)
 
     if args.max_steps > 0:
         t_total = args.max_steps
@@ -186,7 +144,8 @@ def train(args, train_dataset, model, tokenizer):
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
+    # len(dataset) = len(dataloader) * batch_size
+    logger.info("  Num examples = %d", len(train_dataloader) * args.train_batch_size)
     logger.info("  Num Epochs = %d", args.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d",
                 args.per_gpu_train_batch_size)
@@ -200,10 +159,12 @@ def train(args, train_dataset, model, tokenizer):
     logger.info("  Gradient Accumulation steps = %d",
                 args.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
+    logger.info("  K-folds = %d", args.k_folds)
 
     global_step = 0
     epochs_trained = 0
     steps_trained_in_current_epoch = 0
+    max_pairwise_acc = 0
 
     # Check if continuing training from a checkpoint
     if (os.path.exists(args.model_name_or_path)
@@ -250,10 +211,6 @@ def train(args, train_dataset, model, tokenizer):
             # Processes a batch.
             batch = tuple(t.to(args.device) for t in batch)
 
-            # print("batch:", batch)
-            # print("labels:", batch[3])
-            # print("batch[0].size():", batch[0][0].size())
-
             inputs = {"input_ids": batch[0], "attention_mask": batch[1],
                       "labels": batch[3]}
 
@@ -273,76 +230,20 @@ def train(args, train_dataset, model, tokenizer):
             ##################################################
             # TODO: Please finish the following training loop.
             if args.training_phase == "pretrain":
-                output = model(
-                    input_ids=inputs['input_ids'],
-                    labels=inputs['labels']
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    labels=inputs["labels"]
                 )
             else:
-                output = model(
-                    input_ids=inputs['input_ids'],
-                    attention_mask=inputs['attention_mask'],
-                    labels=inputs['labels']
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    labels=inputs["labels"]
                 )
-
-                if args.do_contrastive_learning:
-                    Contrastive_Loss_Func = ContrastiveLoss(batch_size=int(inputs['input_ids'].size(dim=0) / 2))
-
-                    pos = torch.where(inputs['labels'] == 1)[0]
-                    neg = torch.where(inputs['labels'] == 0)[0]
-                    input_pos = torch.index_select(inputs['input_ids'], 0, pos)
-                    input_neg = torch.index_select(inputs['input_ids'], 0, neg)
-                    mask_pos = torch.index_select(inputs['attention_mask'], 0, pos)
-                    mask_neg = torch.index_select(inputs['attention_mask'], 0, neg)
-                    out_pos = model(
-                        input_ids=input_pos,
-                        attention_mask=mask_pos,
-                        output_hidden_states=True
-                    )
-                    out_neg = model(
-                        input_ids=input_neg,
-                        attention_mask=mask_neg,
-                        output_hidden_states=True
-                    )
-                    pos_emb = torch.stack([torch.mean(pos_outputs[1][-1], dim=1) for pos_outputs in out_pos], dim=1)
-                    neg_emb = torch.stack([torch.mean(neg_outputs[1][-1], dim=1) for neg_outputs in out_neg], dim=1)
-                    
-                    contrastive_loss = Contrastive_Loss_Func(pos_emb, neg_emb)
-                    contrastive_loss = contrastive_loss / args.gradient_accumulation_steps
-                    contrastive_loss.backward()
-
-
-                if args.do_contrastive_learning:
-                    Contrastive_Loss_Func = ContrastiveLoss(batch_size=1)
-                    for i in range(int(inputs['input_ids'].size(dim=0) / 2)):
-                        input_i = inputs['input_ids'][2*i][None, :]
-                        mask_i = inputs['attention_mask'][2*i][None, :]
-
-                        input_j = inputs['input_ids'][2*i + 1][None, :]
-                        mask_j = inputs['attention_mask'][2*i + 1][None, :]
-
-                        out_i = model(
-                            input_ids=input_i,
-                            attention_mask=mask_i,
-                            output_hidden_states=True
-                        )
-
-                        out_j = model(
-                            input_ids=input_j,
-                            attention_mask=mask_j,
-                            output_hidden_states=True
-                        )
-
-                        emb_i = torch.mean(out_i[1][-1], dim=1)
-                        emb_j = torch.mean(out_j[1][-1], dim=1)
-
-                        contrastive_loss = Contrastive_Loss_Func(emb_i, emb_j)
-                        # contrastive_loss = contrastive_loss / args.gradient_accumulation_steps
-                        contrastive_loss.backward()
-                    
 
             # TODO: See the HuggingFace transformers doc to properly get
             # the loss from the model outputs.
-            loss = output.loss
+            loss = outputs.loss
 
             if args.n_gpu > 1:
                 # Applies mean() to average on multi-gpu parallel training.
@@ -380,12 +281,44 @@ def train(args, train_dataset, model, tokenizer):
                         # not average well
                         args.local_rank == -1 and args.evaluate_during_training
                     ):
-                        results = evaluate(args, model, tokenizer,
+                        results = evaluate(args, eval_dataloader, model, tokenizer,
                                            data_split=args.eval_split)
                         for key, value in results.items():
                             tb_writer.add_scalar(
                                 "eval_on_{}_{}".format(args.eval_split, key),
                                 value, global_step)
+
+                        # Optional TODO: You can implement a save best functionality
+                        # to also save best thus far models to a specific output 
+                        # directory such as `checkpoint-best`, the saved weights
+                        # will be overwritten each time your model reaches a best
+                        # thus far evaluation results on the dev set.
+
+                        if args.task_name == "com2sense" or args.task_name == "semeval":                            
+                            eval_pairwise_acc = results["{}_pairwise_accuracy".format(args.task_name)]
+                            if eval_pairwise_acc > max_pairwise_acc:
+                                max_pairwise_acc = eval_pairwise_acc
+                                output_dir = os.path.join(args.output_dir,
+                                    "checkpoint-best")
+                                if not os.path.exists(output_dir):
+                                    os.makedirs(output_dir)
+                                model_to_save = (
+                                    model.module if hasattr(model, "module") else model
+                                )  # Take care of distributed/parallel training
+                                model_to_save.save_pretrained(output_dir)
+                                tokenizer.save_pretrained(output_dir)
+
+                                torch.save(args, os.path.join(output_dir,
+                                        "training_args.bin"))
+                                logger.info("Saving model checkpoint to %s", output_dir)
+
+                                torch.save(optimizer.state_dict(), os.path.join(
+                                    output_dir, "optimizer.pt"))
+                                torch.save(scheduler.state_dict(), os.path.join(
+                                    output_dir, "scheduler.pt"))
+                                logger.info("Saving optimizer and scheduler states to %s",
+                                            output_dir)
+                    
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0],
                                          global_step)
                     tb_writer.add_scalar("loss",
@@ -417,12 +350,6 @@ def train(args, train_dataset, model, tokenizer):
                     logger.info("Saving optimizer and scheduler states to %s",
                                 output_dir)
 
-                    # Optional TODO: You can implement a save best functionality
-                    # to also save best thus far models to a specific output 
-                    # directory such as `checkpoint-best`, the saved weights
-                    # will be overwritten each time your model reaches a best
-                    # thus far evaluation results on the dev set.
-
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
@@ -436,20 +363,20 @@ def train(args, train_dataset, model, tokenizer):
     return global_step, tr_loss / global_step
 
 
-def evaluate(args, model, tokenizer, prefix="", data_split="test"):
+def evaluate(args, eval_dataloader, model, tokenizer, prefix="", data_split="test"):
 
     # Main evaluation loop.
     results = {}
-    eval_dataset = load_and_cache_examples(args, args.task_name,
-                                           tokenizer, evaluate=True,
-                                           data_split=data_split,
-                                           data_dir=args.data_dir)
+    # eval_dataset = load_and_cache_examples(args, args.task_name,
+    #                                        tokenizer, evaluate=True,
+    #                                        data_split=data_split,
+    #                                        data_dir=args.data_dir)
 
-    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+    # args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
     # Note that DistributedSampler samples randomly
-    eval_sampler = SequentialSampler(eval_dataset)
-    eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler,
-                                 batch_size=args.eval_batch_size)
+    # eval_sampler = SequentialSampler(eval_dataset)
+    # eval_dataloader = DataLoader(eval_dataset, sampler=eval_sampler,
+    #                              batch_size=args.eval_batch_size)
 
     # multi-gpu eval
     if args.n_gpu > 1 and not isinstance(model, torch.nn.DataParallel):
@@ -458,7 +385,8 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
     # Eval!
     logger.info("***** Running evaluation on split: {} {} *****".format(
         data_split, prefix))
-    logger.info("  Num examples = %d", len(eval_dataset))
+    # len(dataset) = len(dataloader) * batch_size
+    logger.info("  Num examples = %d", len(eval_dataloader) * args.eval_batch_size)
     logger.info("  Batch size = %d", args.eval_batch_size)
 
     eval_loss = 0.0
@@ -504,20 +432,20 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             ##################################################
             # TODO: Please finish the following eval loop.
             if args.training_phase == "pretrain":
-                output = model(
-                    input_ids=inputs['input_ids'],
-                    labels=inputs['labels']
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    labels=inputs["labels"]
                 )
             elif args.eval_split != "test":
-                output = model(
-                    input_ids=inputs['input_ids'],
-                    attention_mask=inputs['attention_mask'],
-                    labels=inputs['labels']
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                    labels=inputs["labels"]
                 )
             else:
-                output = model(
-                    input_ids=inputs['input_ids'],
-                    attention_mask=inputs['attention_mask']
+                outputs = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"]
                 )
 
             # TODO: See the HuggingFace transformers doc to properly get the loss
@@ -525,12 +453,11 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             # indexing properly the outputs as tuples.
             # Make sure to perform a `.mean()` on the eval loss and add it
             # to the `eval_loss` variable.
+            loss = outputs.loss
+            logits = outputs.logits
+
             if args.eval_split != "test":
-                loss = output.loss
-                loss = loss.mean()
-                eval_loss += loss.item()
-            
-            logits = output.logits
+                eval_loss += loss.mean()
 
             # TODO: Handles the logits with Softmax properly.
             softmax = torch.nn.Softmax(dim=1)
@@ -586,12 +513,12 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             # the following metrics: accuracy, precision, recall and F1-score.
             # Please also make your sci-kit learn scores able to take the
             # `args.score_average_method` for the `average` argument.
-            eval_prec = precision_score(labels, preds, average = args.score_average_method)
             eval_acc = accuracy_score(labels, preds)
-            eval_recall = recall_score(labels, preds, average = args.score_average_method)
-            eval_f1 = f1_score(labels, preds, average = args.score_average_method)
+            eval_prec = precision_score(labels, preds, average=args.score_average_method)
+            eval_recall = recall_score(labels, preds, average=args.score_average_method)
+            eval_f1 = f1_score(labels, preds, average=args.score_average_method)
             # TODO: Pairwise accuracy.
-            if args.task_name == "com2sense":
+            if args.task_name == "com2sense" or args.task_name == "semeval":
                 eval_pairwise_acc = pairwise_accuracy(guids, preds, labels)
 
         # End of TODO.
@@ -605,7 +532,7 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             eval_acc_dict["{}_recall".format(args.task_name)] = eval_recall
             eval_acc_dict["{}_F1_score".format(args.task_name)] = eval_f1
             # Pairwise accuracy.
-            if args.task_name == "com2sense":
+            if args.task_name == "com2sense" or args.task_name == "semeval":
                 eval_acc_dict["{}_pairwise_accuracy".format(args.task_name)] = eval_pairwise_acc
 
         results.update(eval_acc_dict)
@@ -620,7 +547,7 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
                 logger.info("  %s = %s", key, str(results[key]))
                 writer.write("%s = %s\n" % (key, str(results[key])))
 
-    # Stores the prediction .txt file to the `args.output_dir`.
+    # Stores the predictions.txt file to the `args.output_dir`.
     if not has_label:
         pred_file = os.path.join(args.output_dir, "com2sense_predictions.txt")
         pred_fo = open(pred_file, "w")
@@ -628,13 +555,13 @@ def evaluate(args, model, tokenizer, prefix="", data_split="test"):
             pred_fo.write(str(pred)+"\n")
         pred_fo.close()
         logging.info("Saving prediction file to: {}".format(pred_file))
-    else:
-        pred_file = os.path.join(args.output_dir, "com2sense_dev_predictions.txt")
-        pred_fo = open(pred_file, "w")
-        for pred in preds:
-            pred_fo.write(str(pred)+"\n")
-        pred_fo.close()
-        logging.info("Saving prediction file to: {}".format(pred_file))
+    # else:
+    #     pred_file = os.path.join(args.output_dir, "com2sense_dev_predictions.txt")
+    #     pred_fo = open(pred_file, "w")
+    #     for pred in preds:
+    #         pred_fo.write(str(pred)+"\n")
+    #     pred_fo.close()
+    #     logging.info("Saving prediction file to: {}".format(pred_file))
 
     return results
 
@@ -801,67 +728,142 @@ def main():
         return sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info("!!! Number of Params: {} M".format(count_parameters(model)/float(1000000)))
 
-    # Training.
-    if args.do_train:
-        train_dataset = load_and_cache_examples(args, args.task_name,
-                                                tokenizer, data_split="train",
-                                                evaluate=False)
-        global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-        logger.info(" global_step = %s, average loss = %s",
-                    global_step, tr_loss)
 
-    # Evaluation.
-    results = {}
-    if args.do_eval and args.local_rank in [-1, 0]:
-        checkpoints = [args.output_dir]
-        if args.eval_all_checkpoints:
-            checkpoints = list(
-                os.path.dirname(c) for c in sorted(glob.glob(
-                    args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
-            )
-        else:
-            assert args.iters_to_eval is not None, ("At least one"
-                " of `iter_to_eval` or `eval_all_checkpoints` should be set.")
-            checkpoints = []
-            for iter_to_eval in args.iters_to_eval:
-                print("args.iters_to_eval:", args.iters_to_eval)
-                print(args.output_dir + "/*-{}/".format(iter_to_eval) + WEIGHTS_NAME)
-                # checkpoints_curr = list(
-                #     os.path.dirname(c) for c in sorted(glob.glob(
-                #         args.output_dir + "/*-{}/".format(iter_to_eval)
-                #         + WEIGHTS_NAME, recursive=True))
-                # )
-                # the original code has an extea *-, I don't know why
-                checkpoints_curr = list(
+    # Concatenate train/dev datasets
+    train_dataset = load_and_cache_examples(args, args.task_name,
+                                            tokenizer, data_split="train",
+                                            evaluate=False)
+    dev_dataset = load_and_cache_examples(args, args.task_name,
+                                        tokenizer, data_split="dev",
+                                        evaluate=False)
+    dataset = ConcatDataset([train_dataset, dev_dataset])
+
+    args.train_batch_size = args.per_gpu_train_batch_size * max(1, args.n_gpu)
+    args.eval_batch_size = args.per_gpu_eval_batch_size * max(1, args.n_gpu)
+
+    # Define the K-fold Cross Validator
+    kfold = KFold(n_splits=args.k_folds, shuffle=True)
+
+    fold_results = {}
+    eval_results = {}
+
+    # K-fold Cross Validation model evaluation
+    for fold, (train_idx, dev_idx) in enumerate(kfold.split(dataset)):
+        print('----------------------------------------------------------------')
+        print(f'FOLD {fold}')
+        print('----------------------------------------------------------------')
+
+        # Sample elements randomly from a given list of ids, no replacement.
+        train_subsampler = SubsetRandomSampler(train_idx)
+        eval_subsampler = SubsetRandomSampler(dev_idx)
+
+        # Define data loaders for training and testing data in this fold
+        train_dataloader = DataLoader(dataset, sampler=train_subsampler,
+                                      batch_size=args.train_batch_size)
+        eval_dataloader = DataLoader(dataset, sampler=eval_subsampler,
+                                    batch_size=args.eval_batch_size)
+
+        # Training.
+        if args.do_train:
+            global_step, tr_loss = train(args, train_dataloader, 
+                                        eval_dataloader, model, tokenizer)
+            logger.info(" global_step = %s, average loss = %s",
+                        global_step, tr_loss)
+
+        # Evaluation.
+        results = {}
+        if args.do_eval and args.local_rank in [-1, 0]:
+            checkpoints = [args.output_dir]
+            if args.eval_all_checkpoints:
+                checkpoints = list(
                     os.path.dirname(c) for c in sorted(glob.glob(
-                        args.output_dir + "/{}/".format(iter_to_eval)
-                        + WEIGHTS_NAME, recursive=True))
+                        args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True))
                 )
-                checkpoints += checkpoints_curr
+            else:
+                assert args.iters_to_eval is not None, ("At least one"
+                    " of `iter_to_eval` or `eval_all_checkpoints` should be set.")
+                checkpoints = []
+                for iter_to_eval in args.iters_to_eval:
+                    checkpoints_curr = list(
+                        os.path.dirname(c) for c in sorted(glob.glob(
+                            args.output_dir + "/*-{}/".format(iter_to_eval)
+                            + WEIGHTS_NAME, recursive=True))
+                    )
+                    checkpoints += checkpoints_curr
 
-        logger.info("\n\nEvaluate the following checkpoints: %s", checkpoints)
-        for checkpoint in checkpoints:
-            logger.info("\n\nEvaluate checkpoint: %s", checkpoint)
-            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            prefix = checkpoint.split("/")[-1] if checkpoint.find("checkpoint") != -1 else ""
-            ckpt_path = os.path.join(checkpoint, "pytorch_model.bin")
-            model.load_state_dict(torch.load(ckpt_path))
-            model.to(args.device)
+            logger.info("\n\nEvaluate the following checkpoints: %s", checkpoints)
+            for checkpoint in checkpoints:
+                logger.info("\n\nEvaluate checkpoint: %s", checkpoint)
+                global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
+                prefix = checkpoint.split("/")[-1] if checkpoint.find("checkpoint") != -1 else ""
+                ckpt_path = os.path.join(checkpoint, "pytorch_model.bin")
+                model.load_state_dict(torch.load(ckpt_path))
+                model.to(args.device)
 
-            ##################################################
-            # TODO: Make sure the eval_split is "test" if in
-            # testing phase.
-            pass  # This TODO does not require any actual
-                  # implementations, just a reminder.
-            # End of TODO.
-            ##################################################
+                ##################################################
+                # TODO: Make sure the eval_split is "test" if in
+                # testing phase.
+                pass  # This TODO does not require any actual
+                    # implementations, just a reminder.
+                # End of TODO.
+                ##################################################
 
-            result = evaluate(args, model, tokenizer, prefix=prefix, data_split=args.eval_split)
-            result = dict((k + "_{}".format(global_step), v)
-                           for k, v in result.items())
-            results.update(result)
+                result = evaluate(args, eval_dataloader, model, tokenizer, 
+                                prefix=prefix, data_split=args.eval_split)
+                # result = dict((k + "_{}".format(global_step), v)
+                #             for k, v in result.items())
+                # results.update(result)
 
-    return results
+            # Evaluate best checkpoint
+            if args.task_name == "com2sense" or args.task_name == "semeval":
+                ckpt = "best"
+            else:
+                ckpt = 200
+            ckpt_best = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir 
+                        + "/*-{}/".format(ckpt) + WEIGHTS_NAME, recursive=True)))
+            for ckpt in ckpt_best:
+                logger.info("\n\n| FOLD %d | Evaluate checkpoint: %s", fold, ckpt)
+                ckpt_path = os.path.join(ckpt, "pytorch_model.bin")
+                model.load_state_dict(torch.load(ckpt_path))
+                model.to(args.device)
+
+                best_results = evaluate(args, eval_dataloader, model, tokenizer, 
+                                        prefix=prefix, data_split=args.eval_split)
+                fold_results[fold] = best_results
+
+    print('----------------------------------------------------------------')
+    print(f'K-FOLD CROSS VALIDATION RESULTS FOR {args.k_folds} FOLDS')
+    print('----------------------------------------------------------------')
+    sum_acc = 0.0
+    sum_prec = 0.0
+    sum_recall = 0.0
+    sum_f1 = 0.0
+    sum_pairwise_acc = 0.0
+    for fold, results in fold_results.items():
+        sum_acc += results["{}_accuracy".format(args.task_name)]
+        sum_prec += results["{}_precision".format(args.task_name)]
+        sum_recall += results["{}_recall".format(args.task_name)]
+        sum_f1 += results["{}_F1_score".format(args.task_name)]
+        if args.task_name == "com2sense" or args.task_name == "semeval":
+            sum_pairwise_acc += results["{}_pairwise_accuracy".format(args.task_name)]
+
+    k = len(fold_results.items())
+    eval_dict = {"{}_accuracy".format(args.task_name): sum_acc/k}
+    eval_dict["{}_precision".format(args.task_name)] = sum_prec/k
+    if args.task_name == "com2sense" or args.task_name == "semeval":
+        eval_dict["{}_pairwise_accuracy".format(args.task_name)] = sum_pairwise_acc/k
+    eval_dict["{}_recall".format(args.task_name)] = sum_recall/k
+    eval_dict["{}_F1_score".format(args.task_name)] = sum_f1/k
+
+    kfold_eval_file = os.path.join(args.output_dir, "kfold_eval_results.txt")
+    with open(kfold_eval_file, "w") as writer:
+        logger.info("***** Eval {}-fold average results *****".format(args.k_folds))
+        for key in sorted(eval_results.keys()):
+            logger.info("  average_%s = %s", key, str(eval_results[key]))
+            writer.write("average_%s = %s\n" % (key, str(eval_results[key])))
+    logger.info("Saving k-fold evaluation file to: {}".format(kfold_eval_file))
+
+    return eval_results
 
 
 if __name__ == "__main__":

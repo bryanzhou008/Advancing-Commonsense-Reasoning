@@ -11,9 +11,9 @@ OUTPUT_DIR=${TASK_NAME}/bryan2
 
 
 CUDA_VISIBLE_DEVICES=1 python3 -m trainers.train \
-  --model_name_or_path outputs/com2sense/bryan2/ckpts/checkpoint-2000 \
+  --model_name_or_path outputs/com2sense/bryan2/ckpts/checkpoint-2400 \
   --do_eval \
-  --iters_to_eval checkpoint-2000 \
+  --iters_to_eval checkpoint-2400 \
   --per_gpu_eval_batch_size 1 \
   --max_seq_length 128 \
   --output_dir "${OUTPUT_DIR}/ckpts" \
