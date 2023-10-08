@@ -51,8 +51,8 @@ sh scripts/test.sh
 If you find the code in this repo helpful, please consider citing our technical report:
 
 ```
-@article{Advancing Transformers’ Capabilities in Commonsense Reasoning,
-   title={Non-Sequential Graph Script Induction via Multimedia Grounding},
+@article{Zhou2023CommonSense,
+   title={dvancing Transformers’ Capabilities in Commonsense Reasoning},
    author={Zhou, Yu and Yunqiu, Han and Zhou, Hanyu, Wu and Yulun},
    year={2023},
 }
