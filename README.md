@@ -4,15 +4,17 @@
 [![Python](https://img.shields.io/badge/python-3.6-blue)](https://www.python.org/)
 ![PyTorch](https://img.shields.io/badge/pytorch-1.5-yellow)
 
-**Advancing Transformers’ Capabilities in Commonsense Reasoning  [Technical Report](https://bryanzhou008.github.io/files/com2sense.pdf)**<br>
-Yu Zhou, Yunqiu Han, Hanyu Zhou, Yulun Wu<br>
-
-Recent advances in general purpose pre-trained language models have shown great potential
-in commonsense reasoning. However, current works still perform poorly on standard commonsense reasoning benchmarks including the Com2Sense Dataset (Singh et al., 2021). We argue that this is due to a disconnect with current cutting-edge machine learning methods. In this work, we aim to bridge the gap by introducing current ML-based methods to improve general purpose pre-trained language models in the task of commonsense reasoning. Specifically, we experiment with and systematically evaluate methods including knowledge transfer, model ensemble, and introducing an additional pairwise contrastive objective. Our best model outperforms the strongest previous works by ∼ 15% absolute gains in Pairwise Accuracy and ∼ 8.7% absolute gains in Standard Accuracy.
+**[[Technical Report]](https://bryanzhou008.github.io/files/com2sense.pdf) Advancing Transformers’ Capabilities in Commonsense Reasoning**<br>
+Yu Zhou, Yunqiu Han, Hanyu Zhou, Yulun Wu<br><br>
 
 This repository includes code and scripts to run all experiments provided in the technical report. The code in this repository are written based on the [Com2Sense Paper Repo](https://github.com/PlusLabNLP/Com2Sense).
 
 
+## Abstract
+Recent advances in general purpose pre-trained language models have shown great potential
+in commonsense reasoning. However, current works still perform poorly on standard commonsense reasoning benchmarks including the Com2Sense Dataset (Singh et al., 2021). We argue that this is due to a disconnect with current cutting-edge machine learning methods. In this work, we aim to bridge the gap by introducing current ML-based methods to improve general purpose pre-trained language models in the task of commonsense reasoning. Specifically, we experiment with and systematically evaluate methods including knowledge transfer, model ensemble, and introducing an additional pairwise contrastive objective. Our best model outperforms the strongest previous works by ∼ 15% absolute gains in Pairwise Accuracy and ∼ 8.7% absolute gains in Standard Accuracy.
+
+![](./media/example.png)
 
 ## Reproduce Our Results
 
