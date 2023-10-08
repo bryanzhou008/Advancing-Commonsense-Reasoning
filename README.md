@@ -4,8 +4,7 @@
 [![Python](https://img.shields.io/badge/python-3.6-blue)](https://www.python.org/)
 ![PyTorch](https://img.shields.io/badge/pytorch-1.5-yellow)
 
-**Advancing Transformers’ Capabilities in Commonsense Reasoning**<br>
-**[Technical Report](https://bryanzhou008.github.io/files/com2sense.pdf)**<br>
+**Advancing Transformers’ Capabilities in Commonsense Reasoning  [Technical Report](https://bryanzhou008.github.io/files/com2sense.pdf)**<br>
 Yu Zhou, Yunqiu Han, Hanyu Zhou, Yulun Wu<br>
 
 Recent advances in general purpose pre-trained language models have shown great potential
