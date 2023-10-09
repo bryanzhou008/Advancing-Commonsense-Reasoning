@@ -7,7 +7,7 @@
 **[[Technical Report]](https://bryanzhou008.github.io/files/com2sense.pdf) Advancing Transformers’ Capabilities in Commonsense Reasoning**<br>
 Yu Zhou, Yunqiu Han, Hanyu Zhou, Yulun Wu<br><br>
 
-This repository includes code and scripts to run all experiments provided in the technical report. The code in this repository are written based on the [Com2Sense Paper Repo](https://github.com/PlusLabNLP/Com2Sense).
+This repository includes code and scripts to run all experiments provided in the above technical report.
 
 
 ## Abstract
@@ -57,3 +57,9 @@ If you find the code in this repo helpful, please consider citing our technical 
    year={2023},
 }
 ```
+
+## Acknowledgements
+
+The code in this repository are written based on the [Com2Sense Paper Repo](https://github.com/PlusLabNLP/Com2Sense).
+
+This project was completed during CS188-NLP, with support from the course instructors Ziyi Dou, Te-Lin Wu, and Prof. Nanyun Peng.
