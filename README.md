@@ -4,7 +4,8 @@
 [![Python](https://img.shields.io/badge/python-3.6-blue)](https://www.python.org/)
 ![PyTorch](https://img.shields.io/badge/pytorch-1.5-yellow)
 
-**Advancing Transformers’ Capabilities in Commonsense Reasoning [Technical Report](https://bryanzhou008.github.io/files/com2sense.pdf)**<br>
+**Advancing Transformers’ Capabilities in Commonsense Reasoning**<br>
+**[Technical Report](https://bryanzhou008.github.io/files/com2sense.pdf)**<br>
 Yu Zhou, Yunqiu Han, Hanyu Zhou, Yulun Wu<br><br>
 
 This repository includes code and scripts to run all experiments provided in the above technical report.
